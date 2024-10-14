@@ -89,7 +89,12 @@ def calculate_rainfall_accumulations(station_id):
         daily_rainfall_yesterday['station_id'] = station_id
 
         # Resample by month and sum the daily precipitation values
-        monthly_accumulation = df_weather.resample('M').sum().reset_index()
+        monthly_accumulation = df_weather.resample('ME').sum()  # Monthly sum
+        monthly_dates = df_weather.resample('ME').apply(lambda x: x.index.max())  # Get the last date of each month
+
+        # Combine the monthly accumulation with corresponding end-of-month dates
+        monthly_accumulation['fecha'] = monthly_dates
+        monthly_accumulation = monthly_accumulation.reset_index(drop=True)
         monthly_accumulation['station_id'] = station_id
 
         return daily_rainfall_yesterday, monthly_accumulation
