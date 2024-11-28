@@ -107,18 +107,18 @@ epmaps_stations = pd.read_csv('EPMAPS_stations.csv')  # Update with your actual 
 fonag_stations = pd.read_csv('FONAG_stations.csv')    # Update with your actual path
 
 # Extract unique station IDs and their proprietary information
-epmaps_station_ids = epmaps_stations['id_estacion'].unique()
-fonag_station_ids = fonag_stations['id_estacion'].unique()
+epmaps_station_ids = epmaps_stations[['id_estacion', 'codigo']]
+fonag_station_ids = fonag_stations[['id_estacion', 'codigo']]
 
 # Combine station IDs from both sources
-all_station_ids = list(set(epmaps_station_ids) | set(fonag_station_ids))
+all_stations = pd.concat([epmaps_station_ids, fonag_station_ids]).drop_duplicates()
 
 # Initialize empty DataFrames to store daily, monthly, and hourly data for all stations
 all_daily_rainfall = pd.DataFrame()
 all_monthly_accumulation = pd.DataFrame()
 all_hourly_rainfall = pd.DataFrame()  # New for hourly data
 
-# Initialize report list to track the status of each station
+# Initialize the report list to track the status of each station
 station_report = []
 
 # Track the number of successfully processed stations and those with errors
@@ -127,9 +127,9 @@ stations_with_errors = 0
 
 # Determine proprietary of each station
 def get_proprietary(station_id):
-    if station_id in epmaps_station_ids:
+    if station_id in epmaps_station_ids['id_estacion'].values:
         return "EPMAPS"
-    elif station_id in fonag_station_ids:
+    elif station_id in fonag_station_ids['id_estacion'].values:
         return "FONAG"
     else:
         return "UNKNOWN"
@@ -145,20 +145,21 @@ for station_id in all_station_ids:
         end_date = datetime.now().strftime('%Y-%m-%d')
         hourly_df = fetch_weather_data(start_date, end_date, station_id)
         hourly_df['station_id'] = station_id
-        
+
         # Append hourly data to the consolidated DataFrame
         all_hourly_rainfall = pd.concat([all_hourly_rainfall, hourly_df], ignore_index=True)
 
-        # Determine the proprietary of the station
+        # Determine the proprietary and "codigo" of the station
         proprietary = get_proprietary(station_id)
+        codigo = all_stations.loc[all_stations['id_estacion'] == station_id, 'codigo'].values[0] if not all_stations.loc[all_stations['id_estacion'] == station_id, 'codigo'].empty else 'UNKNOWN'
 
         # Determine the status of the station
         if daily_rainfall_df.empty and monthly_accumulation_df.empty:
-            station_report.append({"station_id": station_id, "status": "NO DATA", "proprietary": proprietary})
+            station_report.append({"station_id": station_id, "codigo": codigo, "status": "NO DATA", "proprietary": proprietary})
         elif daily_rainfall_df.empty or monthly_accumulation_df.empty:
-            station_report.append({"station_id": station_id, "status": "SOME DATA MISSING", "proprietary": proprietary})
+            station_report.append({"station_id": station_id, "codigo": codigo, "status": "SOME DATA MISSING", "proprietary": proprietary})
         else:
-            station_report.append({"station_id": station_id, "status": "OK", "proprietary": proprietary})
+            station_report.append({"station_id": station_id, "codigo": codigo, "status": "OK", "proprietary": proprietary})
             stations_processed += 1  # Count successful processing
 
         # Append the daily and monthly data to the consolidated DataFrames
@@ -168,17 +169,11 @@ for station_id in all_station_ids:
     except Exception as e:
         print(f"Failed to process data for station {station_id}: {e}")
         proprietary = get_proprietary(station_id)
-        station_report.append({"station_id": station_id, "status": "ERROR", "proprietary": proprietary})
+        codigo = all_stations.loc[all_stations['id_estacion'] == station_id, 'codigo'].values[0] if not all_stations.loc[all_stations['id_estacion'] == station_id, 'codigo'].empty else 'UNKNOWN'
+        station_report.append({"station_id": station_id, "codigo": codigo, "status": "ERROR", "proprietary": proprietary})
         stations_with_errors += 1  # Increment error count
 
-# Save the consolidated hourly data to a CSV file
-all_hourly_rainfall.to_csv('all_stations_hourly_rainfall.csv', index=False)
-
-# Save the consolidated daily and monthly data to single CSV files
-all_daily_rainfall.to_csv('all_stations_daily_rainfall.csv', index=False)
-all_monthly_accumulation.to_csv('all_stations_monthly_accumulation.csv', index=False)
-
-# Save the station report as a CSV file
+# Save the station report as a CSV file with "codigo" included
 report_df = pd.DataFrame(station_report)
 report_df.to_csv('station_processing_report.csv', index=False)
 
